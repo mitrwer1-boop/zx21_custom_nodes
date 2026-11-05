@@ -61,15 +61,22 @@ function applyModels(node, payload) {
 }
 
 async function refreshModels(node, force = false) {
+    // Only the latest request for this node may touch the widget: a slow
+    // in-flight fetch (e.g. started before base_url was changed) must never
+    // overwrite a newer result.
+    const requestId = (node._llm_models_request =
+        (node._llm_models_request ?? 0) + 1);
     const baseUrl = widget(node, "base_url")?.value ?? "";
     const apiKey = widget(node, "api_key")?.value ?? "";
     try {
         const payload = await fetchModels(baseUrl, apiKey, force);
+        if (node._llm_models_request !== requestId) return;
         applyModels(node, payload);
         console.log(
             `${TAG} model selector: ${payload?.models?.length ?? 0} models from ${baseUrl}`,
         );
     } catch (err) {
+        if (node._llm_models_request !== requestId) return;
         applyModels(node, { error: String(err?.message ?? err) });
         console.warn(`${TAG} model selector fetch failed`, err);
     }

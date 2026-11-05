@@ -29,7 +29,9 @@ function formatHistory(history, entryLabel) {
 
     let index = ENTRY_OPTIONS.indexOf(entryLabel);
     if (index < 0) index = 0;
-    const item = history[Math.min(history.length - 1 - index, history.length - 1)];
+    // Newest first, clamped to the oldest entry that actually exists.
+    const ordered = history.slice().reverse();
+    const item = ordered[Math.min(index, ordered.length - 1)];
 
     return (
         `${sidebar}\n\n` +

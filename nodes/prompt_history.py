@@ -57,6 +57,12 @@ class PromptHistoryViewer:
         one_line = " ".join((text or "").split())
         return one_line[:width] + ("..." if len(one_line) > width else "")
 
+    @staticmethod
+    def _select_entry(history: list, index: int) -> dict:
+        """Newest-first selection, clamped to the oldest available entry."""
+        ordered_history = list(reversed(history))
+        return ordered_history[min(index, len(ordered_history) - 1)]
+
     def view(self, entry: str) -> dict:
         history = _load_history()
 
@@ -80,8 +86,8 @@ class PromptHistoryViewer:
                 "result": ("", ""),
             }
 
-        # Newest first, clamped to what actually exists.
-        item = history[min(len(history) - 1 - index, len(history) - 1)]
+        # Newest first, clamped to the oldest entry that actually exists.
+        item = self._select_entry(history, index)
 
         preview_text = (
             f"{sidebar}\n\n"

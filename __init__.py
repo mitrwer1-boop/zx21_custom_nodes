@@ -10,6 +10,7 @@ for a special-format DeepSeek proxy) is picked up automatically when the
 folder is present in a local install.
 """
 
+import asyncio
 import threading
 import time
 
@@ -120,7 +121,12 @@ try:
                 })
 
         try:
-            models = LLMModelSelector.fetch_models(base_url, api_key)
+            # Run the blocking urllib call in a worker thread so the ComfyUI
+            # event loop (shared with the whole UI) never stalls on a slow
+            # or unreachable <base_url>/models.
+            models = await asyncio.to_thread(
+                LLMModelSelector.fetch_models, base_url, api_key
+            )
         except Exception as error:
             print(f"[zx21] model list failed for {base_url}: {error}")
             return web.json_response({"models": [], "error": str(error)[:300]})

@@ -20,128 +20,25 @@ from typing import Dict, Any, Tuple, Optional
 from dataclasses import dataclass, field
 
 
-# ─── Error Classification ────────────────────────────────────────────────────
+"""
+LLMClient — Robust HTTP client for OpenAI-compatible LLM APIs.
 
-@dataclass
-class APIError:
-    """Structured API error with diagnostics"""
-    error_type: str
-    cause: str
-    hint: str
-    details: list = field(default_factory=list)
-    api_message: str = ""
+Single source of truth for all API calls in zx21_custom_nodes.
+Features:
+  - Smart retry with Retry-After header respect + exponential backoff + jitter
+  - SSL compatibility for Chinese API providers
+  - Request size logging
+"""
 
-    def user_message(self) -> str:
-        """Format a user-friendly error message (for graceful degradation)"""
-        parts = [f"[{self.error_type}] {self.cause}"]
-        if self.api_message:
-            parts.append(f"API: {self.api_message[:120]}")
-        parts.append(f"Suggestion: {self.hint}")
-        return "\n".join(parts)
-
-
-def classify_error(
-    error: Exception,
-    provider_name: str,
-    model: str,
-    request_size_mb: float = 0.0,
-    elapsed_ms: int = 0
-) -> APIError:
-    """Classify an exception into a structured APIError with diagnostics."""
-    error_str = str(error)
-    err = APIError(
-        error_type="UNKNOWN",
-        cause=error_str[:200],
-        hint="Check terminal for full logs."
-    )
-
-    if "HTTP 401" in error_str or "invalid_api_key" in error_str or "Unauthorized" in error_str:
-        err.error_type = "AUTH"
-        err.cause = "API Key is invalid or expired"
-        err.hint = f"Please check {provider_name}'s API Key."
-        err.details.append("Validation failed, ensure your API Key is valid.")
-
-    elif "HTTP 429" in error_str or "rate_limit" in error_str:
-        err.error_type = "RATE_LIMIT"
-        err.cause = "Rate limit exceeded (retries exhausted)"
-        err.hint = "Please wait a moment before trying again, or upgrade your API tier."
-        err.details.append("Encountered rate limits.")
-
-    elif "HTTP 413" in error_str or "Payload Too Large" in error_str:
-        err.error_type = "PAYLOAD_TOO_LARGE"
-        err.cause = f"Payload too large ({request_size_mb:.2f}MB)"
-        err.hint = "Please compress your images or reduce the text input length."
-        err.details.append("Advice: Compress images to <1024x1024, or reduce quality.")
-
-    elif "HTTP 400" in error_str or "invalid_request" in error_str:
-        err.error_type = "BAD_REQUEST"
-        err.cause = "Bad Request (Parameters error)"
-        err.hint = f"Please check if the model name '{model}' is correct."
-        if request_size_mb > 10:
-            err.details.append(f"Payload is quite large ({request_size_mb:.2f}MB), might exceed server limits.")
-
-    elif "HTTP 404" in error_str or "model_not_found" in error_str:
-        err.error_type = "MODEL"
-        err.cause = f"Model '{model}' not found"
-        err.hint = f"Please confirm if {provider_name} supports this model."
-
-    elif "HTTP 5" in error_str:
-        err.error_type = "SERVER"
-        err.cause = "API Server Error (retries exhausted)"
-        err.hint = f"The {provider_name} service may be temporarily down, please try again later."
-
-    elif "Broken pipe" in error_str:
-        err.error_type = "BROKEN_PIPE"
-        err.cause = "Connection closed by server while transferring data"
-        err.hint = "Payload might be too large or server timed out."
-        if request_size_mb > 5:
-            err.details.append(f"Payload is large ({request_size_mb:.2f}MB), try compressing images.")
-
-    elif "timed out" in error_str.lower() or "timeout" in error_str.lower():
-        err.error_type = "TIMEOUT"
-        err.cause = f"Request timed out ({elapsed_ms / 1000:.1f}s)"
-        err.hint = "Network connection is slow or API response time is too long."
-
-    elif "connection" in error_str.lower() or "URLError" in type(error).__name__:
-        err.error_type = "NETWORK"
-        err.cause = "Could not connect to the API server"
-        err.hint = "Please check your network and proxy settings."
-        err.details.append("Possible causes: Network disconnected / Firewall / Proxy error.")
-
-    elif "missing 'choices'" in error_str:
-        err.error_type = "RESPONSE"
-        err.cause = "API returned an unexpected format"
-        err.hint = "The API might return error text instead of JSON payload."
-
-    # Extract API error message from JSON
-    msg_match = re.search(r'"message"\s*:\s*"([^"]+)"', error_str)
-    if msg_match:
-        err.api_message = msg_match.group(1)
-
-    return err
-
-
-def log_error(err: APIError, provider_name: str, model: str,
-              request_size_mb: float, elapsed_ms: int) -> None:
-    """Print structured error block to terminal."""
-    ts = time.strftime('%H:%M:%S')
-    print(f"")
-    print(f"[zx21] {ts} ✗ {err.error_type} ERROR ({elapsed_ms}ms)")
-    print(f"   ┌──────────────────────────────────────────────")
-    print(f"   │ Provider  {provider_name}")
-    print(f"   │ Model     {model or 'default'}")
-    if request_size_mb > 0:
-        print(f"   │ Payload   {request_size_mb:.2f} MB")
-    print(f"   │ Cause     {err.cause}")
-    if err.api_message:
-        print(f"   │ API Msg   {err.api_message[:120]}")
-    print(f"   │ Hint      {err.hint}")
-    if err.details:
-        print(f"   │")
-        for i, detail in enumerate(err.details, 1):
-            print(f"   │   {i}. {detail}")
-    print(f"   └──────────────────────────────────────────────")
-    print(f"")
+import time
+import random
+import json
+import ssl
+import urllib.request
+import urllib.error
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from typing import Dict, Any, Tuple, Optional
 
 
 # ─── HTTP Client ─────────────────────────────────────────────────────────────
@@ -177,14 +74,27 @@ def _normalize_url(base_url: str, path: str = "/chat/completions") -> str:
 
 
 def _parse_retry_after(headers) -> Optional[float]:
-    """Extract Retry-After value from response headers (seconds)."""
+    """Extract Retry-After from response headers, in seconds.
+
+    Handles both forms the RFC allows: delta-seconds ("120") and HTTP-date
+    ("Wed, 21 Oct 2026 07:28:00 GMT").  Returns None when absent/unparsable.
+    """
     retry_after = headers.get("Retry-After")
-    if retry_after:
-        try:
-            return float(retry_after)
-        except ValueError:
-            pass
-    return None
+    if not retry_after:
+        return None
+
+    try:
+        return float(retry_after)
+    except ValueError:
+        pass
+
+    try:  # HTTP-date form
+        target = parsedate_to_datetime(retry_after)
+        if target.tzinfo is None:
+            target = target.replace(tzinfo=timezone.utc)
+        return max(0.0, (target - datetime.now(timezone.utc)).total_seconds())
+    except (TypeError, ValueError):
+        return None
 
 
 def _is_retryable(code: int) -> bool:

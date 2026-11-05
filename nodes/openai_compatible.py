@@ -65,6 +65,8 @@ class OpenAICompatibleLoader:
     )
     _PERSISTENT_HISTORY_LOCK = threading.Lock()
     PERSISTENT_HISTORY_LIMIT = 5
+    # Reasoning traces can be huge; keep the on-disk history bounded.
+    REASONING_HISTORY_LIMIT = 20000
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -165,26 +167,42 @@ class OpenAICompatibleLoader:
 
     # ── Memory ───────────────────────────────────────────────────────
 
-    def _clear_memory(self, unique_id: str) -> None:
-        if unique_id:
-            self._MEMORY_STORE.pop(unique_id, None)
+    @staticmethod
+    def _memory_key(
+        unique_id: str,
+        base_url: str,
+        model: str,
+        system_prompt: str,
+    ) -> Tuple[str, str, str, str]:
+        """Conversation memory is per node AND per provider config, so a
+        model or endpoint switch never inherits the previous context."""
+        return (unique_id, base_url, model, system_prompt or "")
 
-    def _get_history(self, unique_id: str) -> List[Dict[str, Any]]:
+    def _clear_memory(self, unique_id: str) -> None:
+        """Drop every stored conversation belonging to this node."""
         if not unique_id:
+            return
+        for key in [k for k in self._MEMORY_STORE if k[0] == unique_id]:
+            self._MEMORY_STORE.pop(key, None)
+
+    def _get_history(
+        self, memory_key: Tuple[str, str, str, str] | None
+    ) -> List[Dict[str, Any]]:
+        if not memory_key:
             return []
 
-        return list(self._MEMORY_STORE.get(unique_id, []))
+        return list(self._MEMORY_STORE.get(memory_key, []))
 
     def _remember_turn(
         self,
-        unique_id: str,
+        memory_key: Tuple[str, str, str, str],
         user_text: str,
         assistant_text: str,
     ) -> None:
-        if not unique_id:
+        if not memory_key:
             return
 
-        history = self._MEMORY_STORE.setdefault(unique_id, [])
+        history = self._MEMORY_STORE.setdefault(memory_key, [])
 
         history.append({
             "role": "user",
@@ -218,6 +236,12 @@ class OpenAICompatibleLoader:
                         raise ValueError("History file must contain a JSON list.")
                 else:
                     saved_history = []
+
+                if len(reasoning) > self.REASONING_HISTORY_LIMIT:
+                    reasoning = (
+                        reasoning[: self.REASONING_HISTORY_LIMIT]
+                        + "...[truncated]"
+                    )
 
                 saved_history.append({
                     "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -428,13 +452,18 @@ class OpenAICompatibleLoader:
         if not prompt and not image_urls:
             return self._error_result("Prompt is empty.")
 
-        if not enable_memory:
-            self._clear_memory(unique_id)
-
         resolved_system_prompt = load_system_prompt(system_prompt)
 
         if system_prompt == "None (empty)":
             resolved_system_prompt = None
+
+        if not enable_memory:
+            self._clear_memory(unique_id)
+            memory_key = None
+        else:
+            memory_key = self._memory_key(
+                unique_id, base_url, model, resolved_system_prompt or ""
+            )
 
         messages: List[Dict[str, Any]] = []
 
@@ -445,7 +474,7 @@ class OpenAICompatibleLoader:
             })
 
         if enable_memory:
-            messages.extend(self._get_history(unique_id))
+            messages.extend(self._get_history(memory_key))
 
         messages.append({
             "role": "user",
@@ -531,9 +560,9 @@ class OpenAICompatibleLoader:
 
             if enable_memory:
                 self._remember_turn(
-                    unique_id=unique_id,
-                    user_text=prompt,
-                    assistant_text=response_content,
+                    memory_key,
+                    prompt,
+                    response_content,
                 )
 
             self._save_persistent_turn(

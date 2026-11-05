@@ -38,3 +38,11 @@ drop the `.txt` files into `nodes/prompts/`.
 - Server endpoints: `GET /zx21/history`, `POST /zx21/models`.
 - Based on [ComfyUI-LLMs-Toolkit](https://github.com/HuangYuChuh/ComfyUI-LLMs-Toolkit) (AGPL-3.0, see LICENSE);
   most of the original code has since been rewritten.
+
+## Tests
+
+Standalone sanity tests (no ComfyUI needed, numpy/Pillow optional):
+
+```bash
+python tests/test_nodes.py
+```

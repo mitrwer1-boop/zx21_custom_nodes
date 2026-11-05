@@ -8,21 +8,28 @@ NO_SYSTEM_PROMPT = "None (empty)"
 
 
 def _ensure_prompts_dir() -> None:
-    """Create prompts directory if it doesn't exist."""
+    """Create the prompts directory, plus example prompts when there are none."""
     if not os.path.exists(_PROMPTS_DIR):
         os.makedirs(_PROMPTS_DIR, exist_ok=True)
-        # Create example prompts
-        examples = {
-            "default.txt": "You are a helpful AI assistant.",
-            "coding.txt": "You are an expert programmer. Write clean, efficient, well-documented code.",
-            "creative.txt": "You are a creative writer. Use vivid language and engaging narratives.",
-            "concise.txt": "Answer concisely. No fluff, no markdown unless asked.",
-        }
-        for fname, content in examples.items():
-            fpath = os.path.join(_PROMPTS_DIR, fname)
-            if not os.path.exists(fpath):
-                with open(fpath, "w", encoding="utf-8") as f:
-                    f.write(content)
+
+    has_presets = any(
+        fname.lower().endswith(".txt") for fname in os.listdir(_PROMPTS_DIR)
+    )
+    if has_presets:
+        return
+
+    # Create example prompts
+    examples = {
+        "default.txt": "You are a helpful AI assistant.",
+        "coding.txt": "You are an expert programmer. Write clean, efficient, well-documented code.",
+        "creative.txt": "You are a creative writer. Use vivid language and engaging narratives.",
+        "concise.txt": "Answer concisely. No fluff, no markdown unless asked.",
+    }
+    for fname, content in examples.items():
+        fpath = os.path.join(_PROMPTS_DIR, fname)
+        if not os.path.exists(fpath):
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(content)
 
 
 def system_prompt_options() -> List[str]:
