@@ -4,28 +4,6 @@ LLMClient — Robust HTTP client for OpenAI-compatible LLM APIs.
 Single source of truth for all API calls in zx21_custom_nodes.
 Features:
   - Smart retry with Retry-After header respect + exponential backoff + jitter
-  - Structured error diagnostics with actionable hints
-  - SSL compatibility for Chinese API providers
-  - Request size logging
-"""
-
-import time
-import random
-import json
-import ssl
-import re
-import urllib.request
-import urllib.error
-from typing import Dict, Any, Tuple, Optional
-from dataclasses import dataclass, field
-
-
-"""
-LLMClient — Robust HTTP client for OpenAI-compatible LLM APIs.
-
-Single source of truth for all API calls in zx21_custom_nodes.
-Features:
-  - Smart retry with Retry-After header respect + exponential backoff + jitter
   - SSL compatibility for Chinese API providers
   - Request size logging
 """
@@ -201,8 +179,10 @@ class LLMClient:
                 error_body = e.read().decode("utf-8", errors="replace")
 
                 if _is_retryable(e.code) and attempt < self.max_retries:
-                    # Respect Retry-After header if present
-                    wait = _parse_retry_after(e.headers) or self._backoff(attempt, is_rate_limit=(e.code == 429))
+                    # Respect Retry-After header if present ("0" = retry now)
+                    wait = _parse_retry_after(e.headers)
+                    if wait is None:
+                        wait = self._backoff(attempt, is_rate_limit=(e.code == 429))
                     print(
                         f"{self.TAG} HTTP {e.code} Error. "
                         f"Retrying {attempt + 1}/{self.max_retries} "

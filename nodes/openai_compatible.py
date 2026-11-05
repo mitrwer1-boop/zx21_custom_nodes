@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import io
 import json
 import time
@@ -65,8 +66,8 @@ class OpenAICompatibleLoader:
     )
     _PERSISTENT_HISTORY_LOCK = threading.Lock()
     PERSISTENT_HISTORY_LIMIT = 5
-    # Reasoning traces can be huge; keep the on-disk history bounded.
-    REASONING_HISTORY_LIMIT = 20000
+    # Per-field cap for the on-disk history: prompt, response and reasoning.
+    HISTORY_TEXT_LIMIT = 20000
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -105,6 +106,8 @@ class OpenAICompatibleLoader:
                 "enable_memory": ("BOOLEAN", {
                     "default": False,
                     "label": "Enable Memory",
+                    "tooltip": "Conversation memory, isolated per "
+                               "model/endpoint/account.",
                 }),
                 "thinking": ("BOOLEAN", {
                     "default": False,
@@ -173,10 +176,15 @@ class OpenAICompatibleLoader:
         base_url: str,
         model: str,
         system_prompt: str,
-    ) -> Tuple[str, str, str, str]:
+        api_key: str = "",
+    ) -> Tuple[str, str, str, str, str]:
         """Conversation memory is per node AND per provider config, so a
-        model or endpoint switch never inherits the previous context."""
-        return (unique_id, base_url, model, system_prompt or "")
+        model, endpoint or account switch never inherits the previous
+        context.  The API key is fingerprinted, never stored raw."""
+        key_fingerprint = hashlib.sha256(
+            (api_key or "").encode("utf-8")
+        ).hexdigest()[:16]
+        return (unique_id, base_url, model, system_prompt or "", key_fingerprint)
 
     def _clear_memory(self, unique_id: str) -> None:
         """Drop every stored conversation belonging to this node."""
@@ -217,6 +225,11 @@ class OpenAICompatibleLoader:
         if len(history) > self.MEMORY_LIMIT:
             del history[: len(history) - self.MEMORY_LIMIT]
 
+    def _truncate_for_history(self, text: str) -> str:
+        if len(text) > self.HISTORY_TEXT_LIMIT:
+            return text[: self.HISTORY_TEXT_LIMIT] + "...[truncated]"
+        return text
+
     def _save_persistent_turn(
         self,
         prompt: str,
@@ -237,17 +250,11 @@ class OpenAICompatibleLoader:
                 else:
                     saved_history = []
 
-                if len(reasoning) > self.REASONING_HISTORY_LIMIT:
-                    reasoning = (
-                        reasoning[: self.REASONING_HISTORY_LIMIT]
-                        + "...[truncated]"
-                    )
-
                 saved_history.append({
                     "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                    "prompt": prompt,
-                    "response": response,
-                    "reasoning": reasoning,
+                    "prompt": self._truncate_for_history(prompt),
+                    "response": self._truncate_for_history(response),
+                    "reasoning": self._truncate_for_history(reasoning),
                 })
                 saved_history = saved_history[-self.PERSISTENT_HISTORY_LIMIT:]
 
@@ -462,7 +469,7 @@ class OpenAICompatibleLoader:
             memory_key = None
         else:
             memory_key = self._memory_key(
-                unique_id, base_url, model, resolved_system_prompt or ""
+                unique_id, base_url, model, resolved_system_prompt or "", api_key
             )
 
         messages: List[Dict[str, Any]] = []
