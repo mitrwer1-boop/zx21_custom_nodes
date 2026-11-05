@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+Thumbs.db
+.DS_Store
+
+# local user data - not for publication
+nodes/openai_compatible_history.txt
+nodes/prompts/
+
+# optional local-only frozen adapter
+legacy/
+web/js/legacy_display_tokens.js
