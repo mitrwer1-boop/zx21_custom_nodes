@@ -234,9 +234,9 @@ class OpenAICompatibleLoader:
         self,
         prompt: str,
         response: str,
-        reasoning: str = "",
     ) -> None:
-        """Keep the five newest prompt/response pairs on disk."""
+        """Keep the five newest prompt/response pairs on disk (the reasoning
+        trace is delivered via the reasoning output, not stored here)."""
         try:
             with self._PERSISTENT_HISTORY_LOCK:
                 history_file = self._PERSISTENT_HISTORY_FILE
@@ -254,7 +254,6 @@ class OpenAICompatibleLoader:
                     "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                     "prompt": self._truncate_for_history(prompt),
                     "response": self._truncate_for_history(response),
-                    "reasoning": self._truncate_for_history(reasoning),
                 })
                 saved_history = saved_history[-self.PERSISTENT_HISTORY_LIMIT:]
 
@@ -575,7 +574,6 @@ class OpenAICompatibleLoader:
             self._save_persistent_turn(
                 prompt=prompt,
                 response=response_content,
-                reasoning=reasoning_content,
             )
 
             return self._success(

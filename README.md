@@ -8,9 +8,9 @@ chat-completions output) but working with any OpenAI-compatible API.
 
 | Node | What it does |
 | --- | --- |
-| **LLM API Adapter** (`OpenAICompatibleLoader`) | Chat completion with two outputs: `response` + `reasoning`. Optional `image` input (ComfyUI IMAGE, up to 8 frames, auto-JPEG ≤1024px) for multimodal models. `thinking` sends `reasoning_effort`. Persistent prompt/response/reasoning history (5 entries). |
+| **LLM API Adapter** (`OpenAICompatibleLoader`) | Chat completion with two outputs: `response` + `reasoning`. Optional `image` input (ComfyUI IMAGE, up to 8 frames, auto-JPEG ≤1024px) for multimodal models. `thinking` sends `reasoning_effort`. Persistent prompt/response history (5 entries). |
 | **LLM Model Selector** (`LLMModelSelector`) | Dropdown filled from `<base_url>/models`. Output plugs into the adapter's `model` field (widgets and input sockets co-exist — no conversion needed). Right-click → «🔄 Refresh model list». |
-| **Prompt History Viewer** (`PromptHistoryViewer`) | Shows the saved prompt/response/reasoning entries. |
+| **Prompt History Viewer** (`PromptHistoryViewer`) | Shows the saved prompt/response entries. |
 
 ## Setup
 

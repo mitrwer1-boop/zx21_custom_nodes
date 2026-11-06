@@ -225,6 +225,29 @@ def test_http_routes():
     check("history endpoint returns list", isinstance(history.payload, list))
 
 
+def test_history_saves_without_reasoning():
+    import json
+    import tempfile
+
+    loader = Loader()
+    with tempfile.TemporaryDirectory() as tmp:
+        loader._PERSISTENT_HISTORY_FILE = Path(tmp) / "history.json"
+        loader._save_persistent_turn(
+            prompt="p" * 25, response="r" * 25, )
+        data = json.loads(loader._PERSISTENT_HISTORY_FILE.read_text("utf-8"))
+    check("history entry fields", set(data[-1]) == {"timestamp", "prompt", "response"})
+    check("history text capped at 20k",
+          len(data[-1]["prompt"]) == 25 and len(data[-1]["response"]) == 25)
+    huge = "x" * 25001
+    with tempfile.TemporaryDirectory() as tmp:
+        loader._PERSISTENT_HISTORY_FILE = Path(tmp) / "history.json"
+        loader._save_persistent_turn(prompt=huge, response="")
+        data = json.loads(loader._PERSISTENT_HISTORY_FILE.read_text("utf-8"))
+    check("oversized field truncated",
+          len(data[-1]["prompt"]) == 20000 + len("...[truncated]")
+          and data[-1]["prompt"].endswith("...[truncated]"))
+
+
 if __name__ == "__main__":
     test_reasoning_extraction()
     test_history_clamp()
@@ -233,4 +256,5 @@ if __name__ == "__main__":
     test_content_building()
     test_image_encoding()
     test_http_routes()
+    test_history_saves_without_reasoning()
     print(f"\nall {CHECKS} checks passed")

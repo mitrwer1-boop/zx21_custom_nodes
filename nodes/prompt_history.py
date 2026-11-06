@@ -94,8 +94,7 @@ class PromptHistoryViewer:
             f"── Selected entry ──\n"
             f"Time:     {item.get('timestamp', '?')}\n"
             f"Prompt:   {item.get('prompt', '')}\n\n"
-            f"Response: {item.get('response', '')}\n\n"
-            f"Reasoning: {item.get('reasoning', '') or '(none captured)'}"
+            f"Response: {item.get('response', '')}"
         )
 
         return {

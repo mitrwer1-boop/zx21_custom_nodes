@@ -38,8 +38,7 @@ function formatHistory(history, entryLabel) {
         `── Selected entry ──\n` +
         `Time:     ${item.timestamp ?? "?"}\n` +
         `Prompt:   ${item.prompt ?? ""}\n\n` +
-        `Response: ${item.response ?? ""}\n\n` +
-        `Reasoning: ${item.reasoning || "(none captured)"}`
+        `Response: ${item.response ?? ""}`
     );
 }
 
