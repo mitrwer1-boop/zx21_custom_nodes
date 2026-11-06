@@ -36,8 +36,19 @@ drop the `.txt` files into `nodes/prompts/`.
 - Vision requires a multimodal model (e.g. `deepseek/deepseek-v4.1-flash`).
 - History files (`nodes/openai_compatible_history.txt`) are local only and git-ignored.
 - Server endpoints: `GET /zx21/history`, `POST /zx21/models`.
-- Based on [ComfyUI-LLMs-Toolkit](https://github.com/HuangYuChuh/ComfyUI-LLMs-Toolkit) (AGPL-3.0, see LICENSE);
-  most of the original code has since been rewritten.
+
+## License
+
+AGPL-3.0 — see [LICENSE](LICENSE).
+
+This project is a derivative of
+[ComfyUI-LLMs-Toolkit](https://github.com/HuangYuChuh/ComfyUI-LLMs-Toolkit)
+(AGPL-3.0), substantially rewritten in 2026: the HTTP client
+(`nodes/api_client.py`) is largely preserved from the original, while most
+node code is new. This repository is the complete corresponding source of
+the modified version. If you run it on a network server and let other
+people interact with it remotely, AGPL-3.0 §13 requires offering them the
+source — linking them to this repository satisfies that.
 
 ## Tests
 
