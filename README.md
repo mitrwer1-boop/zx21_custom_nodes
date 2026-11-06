@@ -20,8 +20,9 @@ chat-completions output) but working with any OpenAI-compatible API.
 3. Pick a model via **LLM Model Selector** (nanoGPT lists models without a key).
 
 Reasoning: enable *Thinking Mode* → the adapter sends `reasoning_effort` and the
-model's trace arrives in `message.reasoning` (shown in the `reasoning` output,
-the token readout and the history viewer).
+model's trace arrives in `message.reasoning`. It is returned through the
+`reasoning` output; the token readout under the node shows the reasoning token
+count.
 
 ## System prompts
 

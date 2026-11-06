@@ -1,5 +1,4 @@
 import base64
-import hashlib
 import io
 import json
 import time
@@ -7,6 +6,17 @@ import re
 import threading
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+
+try:
+    from .api_client import LLMClient
+    from .model_selector import key_fingerprint
+except ImportError:
+    from api_client import LLMClient
+    from model_selector import key_fingerprint
+
+# Conversation-memory key: (unique_id, base_url, model, system_prompt,
+# api_key fingerprint).  The raw key is never part of the key.
+MemoryKey = Tuple[str, str, str, str, str]
 
 try:
     from .api_client import LLMClient
@@ -177,14 +187,17 @@ class OpenAICompatibleLoader:
         model: str,
         system_prompt: str,
         api_key: str = "",
-    ) -> Tuple[str, str, str, str, str]:
+    ) -> MemoryKey:
         """Conversation memory is per node AND per provider config, so a
         model, endpoint or account switch never inherits the previous
         context.  The API key is fingerprinted, never stored raw."""
-        key_fingerprint = hashlib.sha256(
-            (api_key or "").encode("utf-8")
-        ).hexdigest()[:16]
-        return (unique_id, base_url, model, system_prompt or "", key_fingerprint)
+        return (
+            unique_id,
+            base_url,
+            model,
+            system_prompt or "",
+            key_fingerprint(api_key),
+        )
 
     def _clear_memory(self, unique_id: str) -> None:
         """Drop every stored conversation belonging to this node."""
@@ -193,9 +206,7 @@ class OpenAICompatibleLoader:
         for key in [k for k in self._MEMORY_STORE if k[0] == unique_id]:
             self._MEMORY_STORE.pop(key, None)
 
-    def _get_history(
-        self, memory_key: Tuple[str, str, str, str] | None
-    ) -> List[Dict[str, Any]]:
+    def _get_history(self, memory_key: MemoryKey | None) -> List[Dict[str, Any]]:
         if not memory_key:
             return []
 
@@ -203,7 +214,7 @@ class OpenAICompatibleLoader:
 
     def _remember_turn(
         self,
-        memory_key: Tuple[str, str, str, str],
+        memory_key: MemoryKey,
         user_text: str,
         assistant_text: str,
     ) -> None:

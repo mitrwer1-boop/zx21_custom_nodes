@@ -1,5 +1,6 @@
 """Model selector node: picks a model id from the provider's /models list."""
 
+import hashlib
 from typing import Any, Dict, List, Tuple
 
 try:
@@ -20,6 +21,15 @@ FALLBACK_MODELS = [
 # INPUT_TYPES reads this cache, so ComfyUI's server-side "value not in list"
 # validation accepts anything the frontend has fetched at least once.
 _MODEL_LISTS: Dict[str, List[str]] = {}
+
+
+def key_fingerprint(api_key: str) -> str:
+    """Short stable fingerprint of an API key.
+
+    Used wherever a key only needs to be told apart (memory keys, cache
+    keys) so raw keys never end up stored as identifiers.
+    """
+    return hashlib.sha256((api_key or "").encode("utf-8")).hexdigest()[:16]
 
 
 def record_models(base_url: str, models: List[str]) -> None:

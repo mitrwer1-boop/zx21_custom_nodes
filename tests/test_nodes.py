@@ -105,8 +105,12 @@ def test_url_and_retry():
           _normalize_url("http://h/v1/chat/completions") == "http://h/v1/chat/completions")
 
     check("retry numeric", _parse_retry_after({"Retry-After": "7"}) == 7.0)
+    check("retry zero (retry now)", _parse_retry_after({"Retry-After": "0"}) == 0.0)
     check("retry absent", _parse_retry_after({}) is None)
     check("retry garbage", _parse_retry_after({"Retry-After": "soon"}) is None)
+    check("retry negative rejected", _parse_retry_after({"Retry-After": "-5"}) is None)
+    check("retry NaN rejected", _parse_retry_after({"Retry-After": "nan"}) is None)
+    check("retry Infinity rejected", _parse_retry_after({"Retry-After": "inf"}) is None)
     when = format_datetime(datetime.now(timezone.utc) + timedelta(seconds=30), usegmt=True)
     delay = _parse_retry_after({"Retry-After": when})
     check("retry http-date", delay is not None and 0 <= delay <= 35, f"delay={delay}")
@@ -223,6 +227,28 @@ def test_http_routes():
 
     history = asyncio.run(routes[("GET", "/zx21/history")](None))
     check("history endpoint returns list", isinstance(history.payload, list))
+
+    # cache hygiene: bounded size, fingerprinted keys, expired entries purged
+    pkg.LLMModelSelector.fetch_models = staticmethod(
+        lambda base_url, api_key: ["m"])
+    pkg._MODEL_CACHE.clear()
+    for i in range(40):
+        async def _body_i(i=i):
+            return {"base_url": f"https://cache{i}/v1", "api_key": f"key-{i}",
+                    "force": True}
+        asyncio.run(routes[("POST", "/zx21/models")](
+            types.SimpleNamespace(json=_body_i)))
+    check("model cache bounded", len(pkg._MODEL_CACHE) <= 32,
+          f"size={len(pkg._MODEL_CACHE)}")
+    check("raw api keys not in cache keys",
+          not any("key-" in str(k) for k in pkg._MODEL_CACHE))
+    stale_key = ("https://stale/v1", "0" * 16)
+    pkg._MODEL_CACHE[stale_key] = (0.0, ["old"])  # timestamp far in the past
+    async def _body_refresh():
+        return {"base_url": "https://fresh/v1", "api_key": "", "force": True}
+    asyncio.run(routes[("POST", "/zx21/models")](
+        types.SimpleNamespace(json=_body_refresh)))
+    check("expired entries purged on write", stale_key not in pkg._MODEL_CACHE)
 
 
 def test_history_saves_without_reasoning():

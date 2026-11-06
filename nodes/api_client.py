@@ -8,6 +8,7 @@ Features:
   - Request size logging
 """
 
+import math
 import time
 import random
 import json
@@ -61,10 +62,16 @@ def _parse_retry_after(headers) -> Optional[float]:
     if not retry_after:
         return None
 
-    try:
-        return float(retry_after)
+    try:  # delta-seconds form
+        value = float(retry_after)
     except ValueError:
-        pass
+        value = None
+
+    if value is not None:
+        # NaN/Infinity/negative values would break time.sleep() downstream
+        if not math.isfinite(value) or value < 0:
+            return None
+        return value
 
     try:  # HTTP-date form
         target = parsedate_to_datetime(retry_after)

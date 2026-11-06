@@ -19,6 +19,7 @@ from .nodes.model_selector import (
     NODE_CLASS_MAPPINGS as _SELECTOR_MAPPINGS,
     NODE_DISPLAY_NAME_MAPPINGS as _SELECTOR_DISPLAY,
     LLMModelSelector,
+    key_fingerprint,
     record_models,
 )
 from .nodes.openai_compatible import (
@@ -84,7 +85,11 @@ try:
 
     # ── Model list for the LLM Model Selector node ───────────────────
 
+    # (base_url, api-key fingerprint) -> (timestamp, model ids).  Bounded:
+    # expired entries are purged on every write, the oldest entry is evicted
+    # when the limit is reached, and raw API keys are never stored.
     _MODEL_CACHE = {}
+    _MODEL_CACHE_LIMIT = 32
     _MODEL_CACHE_TTL = 300.0
     _MODEL_CACHE_LOCK = threading.Lock()
 
@@ -110,9 +115,11 @@ try:
 
         now = time.time()
 
+        cache_key = (base_url, key_fingerprint(api_key))
+
         if not force:
             with _MODEL_CACHE_LOCK:
-                cached = _MODEL_CACHE.get((base_url, api_key))
+                cached = _MODEL_CACHE.get(cache_key)
             if cached and now - cached[0] < _MODEL_CACHE_TTL:
                 return web.json_response({
                     "models": cached[1],
@@ -134,7 +141,14 @@ try:
         record_models(base_url, models)
 
         with _MODEL_CACHE_LOCK:
-            _MODEL_CACHE[(base_url, api_key)] = (now, models)
+            expired = [k for k, (ts, _) in _MODEL_CACHE.items()
+                       if now - ts >= _MODEL_CACHE_TTL]
+            for k in expired:
+                _MODEL_CACHE.pop(k, None)
+            if len(_MODEL_CACHE) >= _MODEL_CACHE_LIMIT and cache_key not in _MODEL_CACHE:
+                oldest = min(_MODEL_CACHE, key=lambda k: _MODEL_CACHE[k][0])
+                _MODEL_CACHE.pop(oldest, None)
+            _MODEL_CACHE[cache_key] = (now, models)
 
         return web.json_response({"models": models, "count": len(models)})
 except Exception as _route_error:  # pragma: no cover
